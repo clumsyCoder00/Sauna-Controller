@@ -96,9 +96,6 @@ captive_portal:
 # https://esphome.io/components/web_server.html
 # https://oi.esphome.io/v2/www.js
 web_server:
-  auth:
-    username: sparage
-    password: soothe
 #  local: true
   version: 1
 #  ota: false
