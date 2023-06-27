@@ -74,16 +74,7 @@ logger:
   #   switch: INFO
   #   number: INFO
 
-ota:
-  password: "c27be954059087bc6113524e067d7383"
-
 # https://esphome.io/components/wifi.html
-# 192.168.0.1
-# U/N: admin
-# P/W: password
-# 192.168.0.19
-# U/N: cisco
-# P/W: cisco
 wifi:
   networks:
   - ssid: !secret wifi_ssid
