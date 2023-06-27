@@ -35,18 +35,18 @@
 # TX
 
 # TX  GPIO1
-# RX  GPIO3 
+# RX  GPIO3  PWM Sense
 # D1  GPIO5  Heater Mode Button
 # D2  GPIO4  Heater Signal Input
 # D3  GPIO0  Heater Signal Output
-# D4  GPIO2
+# D4  GPIO2  Heater Mode Output
 
 # A0  ADC0   Power LED Input
 # D0  GPIO16
 # D5  GPIO14 Temp Sensor Input
 # D6  GPIO12
-# D7  GPIO13 PWM Sense
-# D8  GPIO15 Heater Mode Output
+# D7  GPIO13
+# D8  GPIO15
 
 # -- Theory of Operation --
 # x setup temp sensor w/ thermostat module to generate heater control
