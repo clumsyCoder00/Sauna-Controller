@@ -86,19 +86,8 @@ ota:
 # P/W: cisco
 wifi:
   networks:
-  # - ssid: Birnbaum 1 # 2.4GHz
-  #   password: Davidafie
-  # - ssid: Birnbaum 2 # 5GHz
-  #   password: Shimonfie
-  - ssid: sauna
-    password: soothesoothe
   - ssid: !secret wifi_ssid
     password: !secret wifi_password
-
-  # Enable fallback hotspot (captive portal) in case wifi connection fails
-  ap:
-    ssid: "Sauna Fallback Hotspot"
-    password: "soothesoothe"
 
 api:
 
