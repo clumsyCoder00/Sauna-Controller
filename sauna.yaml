@@ -1,0 +1,520 @@
+# ---- TODO ----
+# x revise climate to only set heater_signal_status when remote control is on
+# https://esphome.io/guides/automations.html#repeat-action
+# x lock input with output better when using local buttons
+# x when remote control is turned on, sometimes climate remains idle until set temp is changed
+# x change full spectrum to select https://esphome.io/components/select/index.html
+# x only decriment when remote_control is on
+# x turn remote_control on when timer value is adjusted to above 0
+# x add increment/decrement buttons - not a great solution
+# X revise 01 remote control to engage when local control is off
+# x add D0 local power input, logic rewire to separate input & output
+# x implement timer
+#      - https://community.home-assistant.io/t/lcd-display-and-countdown/484749/6
+#      - https://community.home-assistant.io/t/esphome-ha-timer-helper-on-display/390235/6
+# x make local control manually controllable via web & buttons ex - how do I see and turn on/off the status of the local thermostat?
+# x implement global local control automations
+# x figure out how to display heater mode PWM
+# x figure out how to set target temp in farenheit
+# x Add power and cost sensors
+# x update PWM sense to continuous
+# x pull analog sense into UI
+# x switch full spectrum level to OFF/LOW/MED/HIGH
+
+# ---- NOTES ----
+# E8:9F:6D:92:50:29
+
+# https://esphome.io/components/esp8266.html#gpio-pin-numbering
+# https://randomnerdtutorials.com/esp8266-pinout-reference-gpios/
+#       D8
+# D4    D7
+# D3    D6
+# D2    D5
+# D1    D0
+# RX    A0
+# TX
+
+# TX  GPIO1
+# RX  GPIO3 
+# D1  GPIO5  Heater Mode Button
+# D2  GPIO4  Heater Signal Input
+# D3  GPIO0  Heater Signal Output
+# D4  GPIO2
+
+# A0  ADC0   Power LED Input
+# D0  GPIO16
+# D5  GPIO14 Temp Sensor Input
+# D6  GPIO12
+# D7  GPIO13 PWM Sense
+# D8  GPIO15 Heater Mode Output
+
+# -- Theory of Operation --
+# x setup temp sensor w/ thermostat module to generate heater control
+# x local button presses disable remote control, pass through button presses and controls from local thermostat
+# x disable all remote control interior,door & heater control with global variable?
+# x https://www.sunlighten.com/customer-service/amplify-iii-support
+
+esphome:
+  name: sauna
+  friendly_name: sauna
+
+esp8266:
+  board: d1_mini
+
+# Enable logging
+# https://esphome.io/components/logger.html#log-levels
+logger:
+  level: INFO
+  # logs:
+  #   dallas.sensor: INFO
+  #   sensor: INFO
+  #   climate: INFO
+  #   duty_cycle: INFO
+  #   text_sensor: INFO
+  #   switch: INFO
+  #   number: INFO
+
+ota:
+  password: "c27be954059087bc6113524e067d7383"
+
+# https://esphome.io/components/wifi.html
+# 192.168.0.1
+# U/N: admin
+# P/W: password
+# 192.168.0.19
+# U/N: cisco
+# P/W: cisco
+wifi:
+  networks:
+  # - ssid: Birnbaum 1 # 2.4GHz
+  #   password: Davidafie
+  # - ssid: Birnbaum 2 # 5GHz
+  #   password: Shimonfie
+  - ssid: sauna
+    password: soothesoothe
+  - ssid: !secret wifi_ssid
+    password: !secret wifi_password
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Sauna Fallback Hotspot"
+    password: "soothesoothe"
+
+api:
+
+captive_portal:
+
+# https://esphome.io/components/web_server.html
+# https://oi.esphome.io/v2/www.js
+web_server:
+  auth:
+    username: sparage
+    password: soothe
+#  local: true
+  version: 1
+#  ota: false
+
+# https://esphome.io/components/time/index.html
+time:
+  - platform: sntp
+    id: my_time
+    timezone: EST+5EDT,M3.2.0/2,M11.1.0/2
+    on_time:
+      - seconds: 0
+        minutes: '*'
+        # then:
+        #   if:
+        #     condition:
+        #       - switch.is_on: remote_control
+        then:
+          - number.operation:
+              id: timer_duration
+              operation: DECREMENT
+              cycle: false
+
+# https://esphome.io/guides/automations.html#global-variables
+globals:
+  - id: heater_signal_status
+    type: bool
+    initial_value: 'false'
+
+  - id: num_repeat
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+# https://esphome.io/components/output/gpio.html
+output:
+  - platform: gpio
+    pin: D3
+    id: heater_signal_output
+
+# https://esphome.io/components/number/template.html
+number:
+  - platform: template
+    name: "02 Timer"
+    id: timer_duration
+    optimistic: true
+    restore_value: True
+    unit_of_measurement: "Minutes"
+    min_value: 0
+    initial_value: 0
+    max_value: 180
+    step: 1.0
+    on_value:
+      then:
+        - component.update: end_time
+    on_value_range:
+      - below: 0.9
+        then:
+          - switch.turn_off: remote_control
+      # - above: 0.9 # this crashes prog
+      #   then:
+      #     if:
+      #       condition:
+      #         - switch.is_off: remote_control
+      #       then:
+      #         - switch.turn_on: remote_control
+
+  - platform: template
+    name: "05 Target Temperature"
+    id: target_temp
+    optimistic: true
+    restore_value: True
+    unit_of_measurement: "°F"
+    min_value: 70
+    initial_value: 70
+    max_value: 170
+    step: 1.0
+    set_action:
+      then:
+      - logger.log: "Target Temperature Action"
+      # https://esphome.io/guides/automations.html#bonus-templating-actions
+      - climate.control:
+          id: climate_thermostat
+          mode: HEAT
+          target_temperature: !lambda |-
+            // F to C conversion
+            return ((x - 32)*5) / 9;
+
+# https://esphome.io/components/sensor/dallas.html
+dallas:
+  - pin: D5
+    update_interval: 1s
+
+# https://esphome.io/components/sensor/index.html#config-sensor
+sensor:
+  - platform: dallas
+    address: 0x553c67e381e75628
+    id: temp_sense
+
+# https://esphome.io/components/sensor/duty_cycle.html
+  - platform: duty_cycle
+    pin: RX
+    id: full_spectrum_level
+    update_interval: 1s
+
+  - platform: template
+    name: "04 Temperature"
+    lambda: |-
+        return id(temp_sense).state * (9.0/5.0) + 32.0;
+    update_interval: 1s
+    unit_of_measurement: "°F"
+
+# https://esphome.io/components/sensor/template.html
+# full power is 2020W / 16.83A
+# v drop
+# no load     123.2V
+# Full Off    121.1V
+# Full Low    119.7V
+# Full Mid    119.4V
+# Full Hi     119.0V
+# V = I * R
+# I = 16.83A
+# R = 0.24955
+
+# HI	4.2V		16.83A	2020W
+# MID	3.8V		15.2A	1824W
+# LO	3.5V		14.0A	1680W
+# OFF	2.1V		8.42A	1010W
+
+  - platform: template
+    name: "08 Power"
+    id: power_meter
+    lambda: |-
+      if (id(heater_signal_status)) {
+        if (id(full_spectrum_level).state < 25) { // full spectrum off, just far IR
+          return 1.010;
+        } else if (id(full_spectrum_level).state > 25 && id(full_spectrum_level).state < 62.5) { // 50%
+          return 1.680;
+        } else if (id(full_spectrum_level).state > 62.5 && id(full_spectrum_level).state < 87.5) { // 75%
+          return 1.824;
+        } else if (id(full_spectrum_level).state > 87.5) { // 100%
+          return 2.020;
+        } else {
+          return -1.0;
+        }
+      } else {
+        return 0.0;
+      }
+    update_interval: 1s
+    unit_of_measurement: "kW"
+
+  - platform: total_daily_energy
+    name: "09 Energy Usage Today"
+    id: daily_energy
+    power_id: power_meter
+
+  - platform: template
+    name: "10 Energy Cost Today"
+    lambda: |-
+        return id(daily_energy).state * 0.16;
+    update_interval: 1s
+    device_class: "monetary"
+    unit_of_measurement: "USD"
+    accuracy_decimals: 2
+
+# https://esphome.io/components/sensor/adc.html
+  - platform: adc
+    pin: A0
+    id: local_power_LED_sense
+    update_interval: 1s
+
+binary_sensor:
+# https://esphome.io/components/binary_sensor/analog_threshold.html
+  - platform: analog_threshold
+    id: local_power_LED
+    sensor_id: local_power_LED_sense
+    name: 00 Local Control
+    filters:
+      - invert:
+    threshold: 0.665
+    on_press:
+      then:
+      - switch.turn_off: remote_control
+
+# https://esphome.io/components/binary_sensor/gpio.html
+  - platform: gpio
+    pin: D1
+    id: full_spectrum_button
+    on_press:
+      then:
+      - switch.turn_on: full_spectrum_level_output
+    on_release:
+      then:
+      - switch.turn_off: full_spectrum_level_output
+
+  - platform: gpio
+    pin: D2
+    id: heater_signal_input
+    # name: Heater Signal Input
+    on_press:
+      then:
+        - output.turn_on: heater_signal_output
+        - climate.control:
+            id: climate_thermostat
+            mode: 'OFF'
+        - component.update: thermostat_mode
+        - globals.set:
+            id: heater_signal_status
+            value: 'true'
+    on_release:
+      then:
+        - output.turn_off: heater_signal_output
+        - globals.set:
+            id: heater_signal_status
+            value: 'false'
+
+# https://esphome.io/components/text_sensor/template.html
+text_sensor:
+  - platform: template
+    name: "03 End Time"
+    id: end_time
+    lambda: !lambda |-
+          struct tm start_tm, finish_tm;
+          char buf[255];
+
+          memset(&start_tm, 0, sizeof(tm));
+          start_tm = id(my_time).now().to_c_tm(); // Get current time in a tm struct
+
+          finish_tm = start_tm;
+          finish_tm.tm_min += id(timer_duration).state;
+          mktime(&finish_tm);
+
+          strftime(buf, sizeof(buf), "%I:%M %p", &finish_tm);
+          puts(buf);
+          // ESP_LOGW("custom", "%s\n", buf );
+
+          return to_string(buf);
+
+  - platform: template
+    name: "06 Thermostat Operation"
+    id: thermostat_mode
+    lambda: !lambda |-
+      switch(id(climate_thermostat).action) {
+        case CLIMATE_ACTION_OFF :
+          return to_string("OFF");
+        case CLIMATE_ACTION_COOLING :
+          return to_string("COOLING");
+        case CLIMATE_ACTION_HEATING :
+          return to_string("HEATING");
+        case CLIMATE_ACTION_IDLE :
+          return to_string("IDLE");
+        case CLIMATE_ACTION_DRYING :
+          return to_string("DRYING");
+        case CLIMATE_ACTION_FAN :
+          return to_string("FAN");
+        default :
+          return to_string("UNKNOWN");
+      }
+
+# https://esphome.io/components/select/template.html
+# https://esphome.io/components/select/index.html#select-set-action
+# https://esphome.io/components/select/index.html#select-operation-action
+# https://esphome.io/guides/automations.html#repeat-action
+# starts at low
+# (4-existing+new)mod4= number of increments
+
+# if current at 2, new is 0, increment twice 4-2+0=2
+# if current is 1, new is 0, increment 3 times 4-1+0=3
+# current 1 new is 3 (4-1+3) mod 4=2
+# (4-0+3)mod4=3
+# available steps to get to desired index 0, 1, 2, 3
+# index
+# 0   OFF
+# 1   LOW
+# 2   MEDIUM
+# 3   HIGH
+
+# get index of current state, get index of selected state, calculate number of times loop should run to get to desired state
+# derive current (from 08 Full Spectrum Level) and new index in on_value: function
+# set action just stores newIndex in global variable, sets number of repeats, calls script to run repeat routine
+# script gets number of repeats, runs repeat routine
+select:
+  - platform: template
+    name: "07 Full Spectrum"
+    update_interval: 1s
+    options:
+      - 'OFF'
+      - 'LOW'
+      - 'MEDIUM'
+      - 'HIGH'
+    lambda: !lambda |-
+      if (id(full_spectrum_level).state < 25) { // full spectrum off, just far IR
+        return to_string("OFF");
+      } else if (id(full_spectrum_level).state > 25 && id(full_spectrum_level).state < 62.5) { // 50%
+        return to_string("LOW");
+      } else if (id(full_spectrum_level).state > 62.5 && id(full_spectrum_level).state < 87.5) { // 75%
+        return to_string("MEDIUM");
+      } else if (id(full_spectrum_level).state > 87.5) { // 100%
+        return to_string("HIGH");
+      } else {
+        return to_string("UNKNOWN");
+      }
+
+    set_action:
+      then:
+        - lambda: !lambda |-
+            int curIndex=0;
+            int newIndex=0;
+
+            if (id(full_spectrum_level).state < 25) { // full spectrum off, just far IR
+              curIndex=0;
+            } else if (id(full_spectrum_level).state > 25 && id(full_spectrum_level).state < 62.5) { // 50%
+              curIndex=1;
+            } else if (id(full_spectrum_level).state > 62.5 && id(full_spectrum_level).state < 87.5) { // 75%
+              curIndex=2;
+            } else if (id(full_spectrum_level).state > 87.5) { // 100%
+              curIndex=3;
+            }
+
+            if(to_string(x.c_str()) == "OFF") {
+                newIndex=0;
+            } else if(to_string(x.c_str()) == "LOW") {
+                newIndex=1;
+            } else if(to_string(x.c_str()) == "MEDIUM") {
+                newIndex=2;
+            } else if(to_string(x.c_str()) == "HIGH") {
+                newIndex=3;
+            }
+            
+            id(num_repeat) = (4 - curIndex + newIndex) % 4;
+
+        - script.execute: run_repeat
+
+script:
+  - id: run_repeat
+    then:
+      - repeat:
+          count: !lambda |-
+              return id(num_repeat);
+          then:
+            - switch.turn_on: full_spectrum_level_output
+            - delay: 250ms
+            - switch.turn_off: full_spectrum_level_output
+            - delay: 250ms
+
+switch:
+  - platform: gpio
+    id: full_spectrum_level_output
+    pin: D4
+
+# https://esphome.io/components/switch/template.html
+  - platform: template
+    name: "01 Remote Control"
+    id: remote_control
+    restore_mode: ALWAYS_OFF
+    lambda: |-
+      return id(climate_thermostat).action != CLIMATE_ACTION_OFF;
+    turn_on_action:
+      - if:
+          condition: # if local thermostat is off
+            - binary_sensor.is_off: local_power_LED
+          then: # engage remote climate control
+            - climate.control: # turn on remote thermostat
+                id: climate_thermostat
+                mode: 'HEAT'
+            - component.update: thermostat_mode
+            - number.set:
+                id: timer_duration
+                value: 180
+    turn_off_action:
+      - climate.control:
+          id: climate_thermostat
+          mode: 'OFF'
+      - component.update: thermostat_mode
+
+# https://esphome.io/components/climate/thermostat.html
+climate:
+  - platform: thermostat
+    id: climate_thermostat
+    sensor: temp_sense
+    visual:
+      min_temperature: 70 °F
+      max_temperature: 170 °F
+      temperature_step: 1.0 °F
+    min_heating_off_time: 0s
+    min_heating_run_time: 0s
+    min_idle_time: 0s
+    heat_action:
+      - output.turn_on: heater_signal_output
+      - component.update: thermostat_mode
+      - if:
+          condition:
+            - binary_sensor.is_off: local_power_LED
+          then:
+            - globals.set:
+                id: heater_signal_status
+                value: 'true'
+    idle_action:
+      - output.turn_off: heater_signal_output
+      - component.update: thermostat_mode
+      - if:
+          condition:
+            - binary_sensor.is_off: local_power_LED
+          then:
+            - globals.set:
+                id: heater_signal_status
+                value: 'false'
+    target_temperature_change_action:
+      - component.update: thermostat_mode
